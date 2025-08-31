@@ -1,0 +1,30 @@
+# OpenFOAM files
+0/
+0.org/
+constant/polyMesh/
+system/
+VTK/
+*.foam
+
+# CFDEM files
+DEM/post/
+packing_cfdem/CFD/-p/
+packing_cfdem/CFD/0/
+packing_cfdem/CFD/constant/polyMesh/
+packing_cfdem/CFD/system/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Log files
+*.log
+
+# Backup files
+*.backup
+
+# Compiled files
+*.o
+*.so
+*.a

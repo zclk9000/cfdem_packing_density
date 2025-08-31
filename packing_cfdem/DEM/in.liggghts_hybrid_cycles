@@ -1,0 +1,315 @@
+# CFD-DEM混合边界耦合配置 - 5次循环填充实验版本
+# 基于small_hearth案例的混合边界处理方案 + 原始循环机制
+# 
+# 解决方案：
+# - 颗粒生成区域 (Z=1-1.14m): 颗粒插入
+# - 漏斗STL边界区域 (Z=0.86-1.14m): 使用STL边界，DEM处理斜边和缩颈  
+# - CFD-DEM耦合区域 (Z=0-0.86m): CFD-DEM耦合处理流域
+# - 循环机制: 5次填充-排放循环，每次1kg颗粒
+#
+
+atom_style      granular
+atom_modify     map array          # CFD耦合必需的原子映射
+boundary        f f f
+units           si
+communicate     single vel yes
+newton          off
+
+###################################系统变量定义##################################################################
+
+# 完整DEM区域（包含漏斗和圆柱筒）
+variable xmin equal -0.16
+variable xmax equal  0.16  
+variable ymin equal -0.16
+variable ymax equal  0.16
+variable zmin equal  0.00
+variable zmax equal  1.2      # 包含完整漏斗高度
+
+# 关键高度定义  
+variable cfd_boundary equal 0.86   # CFD-DEM耦合边界（流域顶部）
+variable funnel_start equal 0.86   # 漏斗开始高度（STL边界起始）
+variable funnel_top equal 1.14     # 漏斗顶部高度
+variable drop_height equal 1.0     # 颗粒开始下落高度
+
+# 时间步长
+variable dt equal 1e-4
+
+###################################仿真区域定义#######################################################
+
+region reg block ${xmin} ${xmax} ${ymin} ${ymax} ${zmin} ${zmax} units box
+create_box 2 reg  # 2种原子类型：1-颗粒，2-STL几何体
+
+# 关键区域定义（参考small_hearth案例）
+region funnel_region cylinder z 0 0 0.14 ${funnel_start} ${funnel_top}    # 漏斗STL边界区域（0.86-1.14m）
+region cfd_region    cylinder z 0 0 0.14 0.0 ${cfd_boundary}               # CFD耦合区域（0-0.86m）  
+region insertion_reg cylinder z 0 0 0.12 ${drop_height} ${funnel_top}      # 颗粒插入区域（1-1.14m）
+
+neighbor 0.004 bin
+neigh_modify delay 0
+
+###################################接触模型定义####################################################
+
+pair_style gran model hertz tangential history rolling_friction epsd2
+pair_coeff * *
+timestep ${dt}
+
+fix integrator all nve/sphere
+fix gravi all gravity 9.81 vector 0.0 0.0 -1.0
+
+###################################材料属性定义#################################################
+
+# 颗粒和STL几何体材料属性
+variable natoms equal 2
+
+# 杨氏模量
+variable youngmodulus1 equal 1e8  # 颗粒
+variable youngmodulus2 equal 1e8  # STL几何体
+
+# 泊松比
+variable poission1 equal 0.3      # 颗粒
+variable poission2 equal 0.3      # STL几何体
+
+# 恢复系数矩阵
+variable CoR11 equal 0.6          # 颗粒-颗粒
+variable CoR12 equal 0.3          # 颗粒-STL
+variable CoR21 equal 0.3          # STL-颗粒
+variable CoR22 equal 0.6          # STL-STL
+
+# 摩擦系数
+variable sf11 equal 0.18          # 颗粒-颗粒滑动摩擦
+variable sf12 equal 0.20          # 颗粒-STL滑动摩擦
+variable sf21 equal 0.20
+variable sf22 equal 0.0
+
+variable rf11 equal 0.8           # 颗粒-颗粒滚动摩擦
+variable rf12 equal 0.8           # 颗粒-STL滚动摩擦
+variable rf21 equal 0.8
+variable rf22 equal 0.8
+
+# 设置材料属性
+fix m1 all property/global youngsModulus peratomtype ${youngmodulus1} ${youngmodulus2}
+fix m2 all property/global poissonsRatio peratomtype ${poission1} ${poission2}
+fix m3 all property/global coefficientRestitution peratomtypepair ${natoms} ${CoR11} ${CoR12} ${CoR21} ${CoR22}
+fix m4 all property/global coefficientFriction peratomtypepair ${natoms} ${sf11} ${sf12} ${sf21} ${sf22}
+fix m5 all property/global coefficientRollingFriction peratomtypepair ${natoms} ${rf11} ${rf12} ${rf21} ${rf22}
+
+###################################混合边界设置##################################################
+
+# 上部漏斗区域：使用STL边界（保持原始物理约束）
+fix silo_funnel all mesh/surface file ../STL/Silo.stl type 2 scale 1
+fix lid_funnel  all mesh/surface file ../STL/Lid.stl type 2 scale 1
+
+# STL墙体定义（初始状态：包含盖子，盖子关闭）
+fix walls_stl all wall/gran model hertz tangential history rolling_friction epsd2 mesh n_meshes 2 meshes silo_funnel lid_funnel
+
+# CFD-DEM耦合设置（只在下部圆柱区域生效）
+fix cfd all couple/cfd couple_every 100 mpi
+fix cfd2 all couple/cfd/force
+
+# 区域相关的力场处理（关键：CFD耦合只在流域以下生效）
+variable in_cfd_region atom "z <= ${cfd_boundary}"
+
+###################################颗粒模板定义#################################################
+
+variable nradii equal 2
+variable radius1 equal 0.012      # 大颗粒
+variable radius2 equal 0.010      # 小颗粒
+variable frac1 equal 0.2          # 大颗粒比例
+variable frac2 equal 0.8          # 小颗粒比例
+variable density equal 2500       # 颗粒密度
+
+# 颗粒模板
+fix pts1 all particletemplate/sphere 10487 atom_type 1 density constant ${density} radius constant ${radius1}
+fix pts2 all particletemplate/sphere 11887 atom_type 1 density constant ${density} radius constant ${radius2}
+
+# 颗粒分布
+fix pdd1 all particledistribution/discrete 32452867 ${nradii} pts1 ${frac1} pts2 ${frac2}
+
+###################################循环实验参数设置#######################################
+
+variable ncycles equal 1          # 总循环次数（测试用）
+variable fillmass equal 1     # 每次填充质量（单位：kg，约1个颗粒）
+variable filltime equal 0.1       # 填充时间（单位：秒，快速填充）
+variable fillmassrate equal ${fillmass}/${filltime}
+variable fillsteps equal ${filltime}/${dt}
+
+####基于动能阈值的动态控制参数####
+
+# 最大等待时间：防止无限等待的安全限制（测试用）
+variable settletime1_max equal 0.5     # 填充后最大沉降时间（单位：秒）
+variable dischargetime_max equal 1.0   # 最大排放时间（单位：秒）
+variable settletime2_max equal 0.5     # 排放后最大沉降时间（单位：秒）
+
+# 转换为迭代步数
+variable settlesteps1_max equal ${settletime1_max}/${dt}
+variable dischargesteps_max equal ${dischargetime_max}/${dt}
+variable settlesteps2_max equal ${settletime2_max}/${dt}
+
+# 检查频率：每隔多少步检查一次收敛条件（测试用）
+variable check_freq equal 100
+
+# 动能阈值
+variable ke_threshold equal 0.00005
+
+# 计算颗粒的速度相关量，用于判断是否达到平衡态（PFM版本兼容）
+compute ke_atom all ke/atom
+compute avg_ke_compute all reduce ave c_ke_atom
+compute max_ke_compute all reduce max c_ke_atom
+
+# 使用fix ave/time替代update_on_run_end（PFM版本兼容方法）
+fix avg_ke_fix all ave/time 100 1 100 c_avg_ke_compute mode scalar
+fix max_ke_fix all ave/time 100 1 100 c_max_ke_compute mode scalar
+
+# 定义变量访问fix结果
+variable avg_ke_var equal f_avg_ke_fix
+variable max_ke_var equal f_max_ke_fix
+
+###################################数据输出设置##############################################
+
+shell mkdir -p post
+variable dumptime equal 0.01      # 测试用：更频繁输出
+variable dumpstep equal ${dumptime}/${dt}
+
+# 颗粒数据输出（VTK格式便于与CFD结果联合可视化）
+dump dmpparticle all custom/vtk ${dumpstep} post/particles_*.vtk id type x y z vx vy vz fx fy fz radius mass
+
+# STL几何体输出（包含动态盖子状态）
+dump dmpsilo all mesh/stl ${dumpstep} post/Silo*.stl silo_funnel
+dump dmplid all mesh/stl ${dumpstep} post/Lid*.stl lid_funnel
+
+###################################################################################################
+#
+#                           开始5次循环填充-排放实验
+#
+###################################################################################################
+
+print "开始混合边界CFD-DEM耦合 - 5次循环填充实验"
+print "每次循环: 填充${fillmass}kg颗粒 → 沉降 → 开盖排放 → 沉降 → 恢复盖子"
+
+# 循环变量初始化
+variable cycle_num equal 1
+
+# 开始循环
+label cycle_start
+
+print "==================== 第 ${cycle_num} 次循环 ===================="
+
+####################################循环中的填充阶段###########################################################
+
+print "第 ${cycle_num} 次循环 - 阶段1：颗粒填充（${fillmass}kg）"
+
+# 设置颗粒插入器（从漏斗顶部插入）
+fix ins all insert/rate/region seed 86028157 distributiontemplate pdd1 &
+    mass ${fillmass} massrate ${fillmassrate} insert_every 100 overlapcheck yes all_in yes &
+    vel constant 0.0 0.0 -0.5 region insertion_reg
+
+run ${fillsteps}    # 运行填充阶段
+unfix ins           # 停止颗粒插入器
+
+##################################循环中的沉降阶段1#############################################################
+
+print "第 ${cycle_num} 次循环 - 阶段2：填充后沉降稳定"
+
+# 基于速度阈值的动态沉降控制
+variable step_count equal 0                               # 当前阶段步数计数器
+variable stage_converged equal 0                          # 阶段收敛标志
+
+label settle1_loop
+variable step_count equal ${step_count}+${check_freq}     # 更新步数计数器
+run ${check_freq}                                         # 运行检查频率步数
+
+# 检查收敛条件：平均动能低于阈值 或 达到最大时间
+if "${avg_ke_var} < ${ke_threshold}" then "variable stage_converged equal 1"
+if "${step_count} >= ${settlesteps1_max}" then "variable stage_converged equal 1"
+
+# 输出调试信息
+if "${step_count} >= 5000" then "print '沉降阶段1: 步数=${step_count}, 平均动能=${avg_ke_var}, 阈值=${ke_threshold}'"
+
+# 继续循环或结束
+if "${stage_converged} == 0" then "jump SELF settle1_loop"
+
+print "沉降阶段1完成: 总步数=${step_count}, 最终平均动能=${avg_ke_var}"
+
+#################################循环中的开门操作#############################################################
+
+print "第 ${cycle_num} 次循环 - 阶段3：开盖操作（移除底部挡板）"
+
+# 开盖操作 - 移除Lid约束，允许颗粒从底部流出
+# 【关键】：在混合边界中，这影响的是0.86m以下CFD域中的颗粒排放
+unfix walls_stl  # 移除原来的墙体定义（包含盖子）
+fix walls_stl all wall/gran model hertz tangential history rolling_friction epsd2 mesh n_meshes 1 meshes silo_funnel  # 重新定义墙体，只包含筒仓
+
+print "底部挡板已移除，颗粒可从CFD域底部流出"
+
+#################################循环中的颗粒排放###############################################################
+
+print "第 ${cycle_num} 次循环 - 阶段4：颗粒排放（通过CFD域底部）"
+
+# 基于速度阈值的动态排放控制
+variable step_count equal 0                               # 重置步数计数器
+variable stage_converged equal 0                          # 重置阶段收敛标志
+
+label discharge_loop
+variable step_count equal ${step_count}+${check_freq}     # 更新步数计数器
+run ${check_freq}                                         # 运行检查频率步数
+
+# 检查收敛条件：平均动能低于阈值 或 达到最大时间
+if "${avg_ke_var} < ${ke_threshold}" then "variable stage_converged equal 1"
+if "${step_count} >= ${dischargesteps_max}" then "variable stage_converged equal 1"
+
+# 输出调试信息
+if "${step_count} >= 5000" then "print '排放阶段: 步数=${step_count}, 平均动能=${avg_ke_var}, 颗粒总数=$(atoms)'"
+
+# 继续循环或结束
+if "${stage_converged} == 0" then "jump SELF discharge_loop"
+
+print "排放阶段完成: 总步数=${step_count}, 最终平均动能=${avg_ke_var}, 剩余颗粒数=$(atoms)"
+
+#################################循环中的沉降阶段2###############################################################
+
+print "第 ${cycle_num} 次循环 - 阶段5：排放后自然沉降"
+
+# 基于速度阈值的动态沉降控制
+variable step_count equal 0                               # 重置步数计数器  
+variable stage_converged equal 0                          # 重置阶段收敛标志
+
+label settle2_loop
+variable step_count equal ${step_count}+${check_freq}     # 更新步数计数器
+run ${check_freq}                                         # 运行检查频率步数
+
+# 检查收敛条件：平均动能低于阈值 或 达到最大时间
+if "${avg_ke_var} < ${ke_threshold}" then "variable stage_converged equal 1"
+if "${step_count} >= ${settlesteps2_max}" then "variable stage_converged equal 1"
+
+# 输出调试信息
+if "${step_count} >= 5000" then "print '沉降阶段2: 步数=${step_count}, 平均动能=${avg_ke_var}'"
+
+# 继续循环或结束
+if "${stage_converged} == 0" then "jump SELF settle2_loop"
+
+print "沉降阶段2完成: 总步数=${step_count}, 最终平均动能=${avg_ke_var}"
+
+#################################循环中的恢复盖子###############################################################
+
+print "第 ${cycle_num} 次循环 - 阶段6：恢复底部挡板"
+
+# 恢复盖子 - 重新启用盖子与颗粒的相互作用，为下次循环做准备
+unfix walls_stl  # 移除当前墙体定义
+fix walls_stl all wall/gran model hertz tangential history rolling_friction epsd2 mesh n_meshes 2 meshes silo_funnel lid_funnel  # 恢复包含盖子的墙体
+
+print "第 ${cycle_num} 次循环完成! 底部挡板已恢复，准备下次循环"
+
+# 循环控制
+variable cycle_num equal ${cycle_num}+1
+if "${cycle_num} <= ${ncycles}" then "jump SELF cycle_start"
+
+print "======================================================="
+print "所有 ${ncycles} 次混合边界CFD-DEM循环实验完成!"
+print "最终系统状态: 剩余颗粒数=$(atoms)"
+print "======================================================="
+
+# 输出最终步数据
+dump dmpparticle_final all custom 1 post/final_particles_hybrid_cycles.liggghts id type x y z vx vy vz fx fy fz radius mass
+run 1
+
+print "混合边界5次循环实验数据输出完成"
