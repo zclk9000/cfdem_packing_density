@@ -1,9 +1,11 @@
 # 忽略所有文件和文件夹
 *
 
-# 只保留以下实际存在的文件和文件夹
+# 明确指定要同步的文件（白名单）
 !Allclean.sh
 !Allrun.sh
+
+# Blender文件
 !blender/
 !blender/挡板.py
 !blender/漏斗带顶盖.py
@@ -11,7 +13,8 @@
 !blender/圆柱筒带顶底.py
 !blender/圆柱筒.py
 !blender/packing.blend
-!CFD/
+
+# CFD初始配置文件
 !CFD/0.org/
 !CFD/0.org/alpha.air
 !CFD/0.org/alphas
@@ -26,6 +29,7 @@
 !CFD/0.org/Us
 !CFD/0.org/voidfraction
 !CFD/0.org/vSmoothField
+
 !CFD/constant/
 !CFD/constant/couplingProperties
 !CFD/constant/g
@@ -33,6 +37,7 @@
 !CFD/constant/transportProperties
 !CFD/constant/transportProperties_temp
 !CFD/constant/turbulenceProperties
+
 !CFD/system/
 !CFD/system/blockMeshDict
 !CFD/system/controlDict
@@ -41,12 +46,16 @@
 !CFD/system/fvSolution
 !CFD/system/sampleDict
 !CFD/system/setFieldsDict
+
+# DEM文件
 !DEM/
 !DEM/in.liggghts_init
 !DEM/in.liggghts_run
 !DEM/post/
 !DEM/post/.gitignore
 !DEM/Silo.stl
+
+# 其他配置文件
 !.gitignore
 !parCFDDEMrun.sh
 !parDEMrun.sh
