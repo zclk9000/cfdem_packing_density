@@ -13,6 +13,21 @@ packing_cfdem/CFD/0/
 packing_cfdem/CFD/constant/polyMesh/
 packing_cfdem/CFD/system/
 
+# CFD result files - ignore all time folders except 0/
+CFD/processor*/[0-9]*/
+CFD/processor*/[0-9]*.[0-9]*/
+CFD/processor*/[0-9]*.[0-9]*.[0-9]*/
+CFD/processor*/constant/polyMesh/
+
+# VTK files
+*.vtk
+VTK/
+
+# Post processing folders
+post/
+DEM/post/
+packing_cfdem/post/
+
 # Temporary files
 *.tmp
 *.temp
