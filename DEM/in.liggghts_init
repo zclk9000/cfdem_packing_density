@@ -12,7 +12,7 @@ units           si
 region          reg block -0.14 0.14 -0.14 0.14 0 1.14 units box
 create_box      2 reg
 
-neighbor        0.005 bin
+neighbor        0.01 bin
 neigh_modify    delay 0
 
 
@@ -34,7 +34,8 @@ fix         gravi all gravity 9.8 vector 0.0 0.0 -1.0
 
 # STL mesh boundaries
 fix     silo_mesh all mesh/surface file Silo.stl type 2 scale 1
-fix     walls all wall/gran model hertz tangential history mesh n_meshes 1 meshes silo_mesh
+fix     lid_mesh all mesh/surface file Lid.stl type 2 scale 1
+fix     walls all wall/gran model hertz tangential history mesh n_meshes 2 meshes silo_mesh lid_mesh
 
 # particle distributions and insertion
 #region bc block -0.05 0.05 -0.0025 0.0025 0.05 0.1 units box
@@ -47,11 +48,24 @@ fix     ins all insert/pack seed 100001 distributiontemplate pdd1 vel constant 0
 # apply nve integration to all particles that are inserted as single particles
 fix     integr all nve/sphere
 
+# 动态控制计算命令 - 基于速度判断颗粒是否达到平衡态
+compute 	vel_mag all property/atom vx vy vz             # 获取颗粒速度分量
+variable 	vel_magnitude atom sqrt(vx*vx+vy*vy+vz*vz)     # 计算每个颗粒的速度幅值
+compute 	avg_vel all reduce ave v_vel_magnitude          # 计算所有颗粒的平均速度幅值
+compute 	max_vel all reduce max v_vel_magnitude          # 计算最大速度幅值
+
+# 定义基于速度的判断阈值
+variable	avg_vel_threshold equal 0.01		# 平均速度阈值（单位：m/s）
+variable	max_vel_threshold equal 0.02		# 最大速度阈值（单位：m/s）  
+variable	settletime_max equal 10.0		    # 最大沉降时间（单位：秒）
+variable	settlesteps_max equal ${settletime_max}/0.00001	# 转换为迭代步数
+variable	check_freq equal 500			    # 检查频率（迭代步数）
+
 # screen output
 compute         rke all erotate/sphere
 #compute         mp all property/atom mass
 #compute         mpA all reduce ave c_mp
-thermo_style    custom step atoms ke c_rke vol #c_mpA
+thermo_style    custom step atoms ke c_rke vol c_avg_vel c_max_vel
 thermo          1000
 thermo_modify   lost ignore norm no
 compute_modify  thermo_temp dynamic yes
@@ -63,5 +77,28 @@ dump        dmp all custom 500 post/dump*.liggghts_init id type x y z ix iy iz v
 #node : f_couple_cfd[6]
 #cell id : f_couple_cfd[7]
 
-run         100 upto
+print "开始颗粒沉降阶段 - 基于动能阈值的动态控制"
+
+# 初始化控制变量
+variable 	step_count equal 0                               # 当前阶段步数计数器
+variable 	stage_converged equal 0                          # 阶段收敛标志
+
+label settle_loop
+variable 	step_count equal ${step_count}+${check_freq}     # 更新步数计数器
+run 		${check_freq}                                    # 运行检查频率步数
+
+# 检查收敛条件：双重速度判断 或 达到最大时间
+if "$(c_avg_vel) < ${avg_vel_threshold}" then "variable avg_vel_ok equal 1" else "variable avg_vel_ok equal 0"
+if "$(c_max_vel) < ${max_vel_threshold}" then "variable max_vel_ok equal 1" else "variable max_vel_ok equal 0"
+if "${avg_vel_ok} == 1 && ${max_vel_ok} == 1" then "variable stage_converged equal 1"
+if "${step_count} >= ${settlesteps_max}" then "variable stage_converged equal 1"
+
+# 输出调试信息
+if "${step_count} >= 2500" then "print '沉降阶段: 步数=${step_count}, 平均速度=$(c_avg_vel)m/s, 最大速度=$(c_max_vel)m/s'"
+
+# 继续循环或结束
+if "${stage_converged} == 0" then "jump SELF settle_loop"
+
+print "沉降阶段完成: 总步数=${step_count}, 最终平均速度=$(c_avg_vel)m/s, 最大速度=$(c_max_vel)m/s"
+
 write_restart   post/restart/liggghts.restart

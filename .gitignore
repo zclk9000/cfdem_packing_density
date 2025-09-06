@@ -4,6 +4,9 @@
 # 明确指定要同步的文件（白名单）
 !Allclean.sh
 !Allrun.sh
+!monitor_balance.sh
+!README.md
+!项目改进说明.md
 
 # Blender文件
 !blender/
@@ -51,13 +54,17 @@
 !DEM/
 !DEM/in.liggghts_init
 !DEM/in.liggghts_run
-!DEM/post/
-!DEM/post/.gitignore
+!DEM/in.liggghts_run.backup
+!DEM/Lid.stl
 !DEM/Silo.stl
+!DEM/monitor/
+!DEM/post/
+!DEM/post/restart/
 
 # 其他配置文件
 !.gitignore
 !parCFDDEMrun.sh
+!parCFDDEMrun.sh.backup
 !parDEMrun.sh
 !postrun.sh
 !prerun.sh

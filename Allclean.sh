@@ -41,8 +41,10 @@ rm -rf "$casePath/CFD/postProcessing" 2>/dev/null || true
 rm -rf "$casePath/CFD/VTK" 2>/dev/null || true
 rm -rf "$casePath/CFD/clockData" 2>/dev/null || true
 
-# Remove CFD logs
+# Remove CFD logs and monitoring files
 rm -f "$casePath/CFD"/log* "$casePath/CFD"/*.log 2>/dev/null || true
+rm -f "$casePath/CFD/monitor_debug.log" 2>/dev/null || true
+rm -f "$casePath/CFD/ABORT" 2>/dev/null || true
 
 # ---------------- DEM cleanup ----------------
 # Remove DEM logs
@@ -58,11 +60,16 @@ rm -f "$casePath/DEM/post/liggghts_run"* 2>/dev/null || true
 # Remove DEM restart files (both LIGGGHTS init and CFDEM write)
 rm -f "$casePath/DEM/post/restart/"* 2>/dev/null || true
 
+# Remove DEM monitoring files
+rm -f "$casePath/DEM/monitor/velocity.dat" 2>/dev/null || true
+
 # Ensure required directories exist after cleanup (to avoid run-time errors)
 mkdir -p "$casePath/DEM/post/restart"
+mkdir -p "$casePath/DEM/monitor"
 touch "$casePath/DEM/post/.gitignore"
 
 # ---------------- Root logs cleanup ----------------
 rm -f "$casePath"/log* "$casePath"/*.log 2>/dev/null || true
+rm -f "$casePath/monitor_debug.log" 2>/dev/null || true
 
 echo "Cleanup finished."

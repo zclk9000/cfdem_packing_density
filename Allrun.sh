@@ -28,7 +28,21 @@ else
     $casePath/parDEMrun.sh
 fi
 
-bash $casePath/parCFDDEMrun.sh
+# 启动CFD-DEM仿真和平衡监控 [第三步：恢复监控脚本]
+echo "启动CFD-DEM仿真和平衡监控..."
+
+# 在后台启动CFD-DEM仿真
+bash $casePath/parCFDDEMrun.sh &
+CFDDEM_PID=$!
+
+# 等待一下确保CFD-DEM启动
+sleep 5
+
+# 启动平衡监控(前台运行)
+bash $casePath/monitor_balance.sh
+
+# 等待CFD-DEM进程完成
+wait $CFDDEM_PID
 
 if [ "$postProcessing" = true ]; then
     bash $casePath/postrun.sh

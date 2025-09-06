@@ -15,7 +15,7 @@ processors      2 2 1
 # read the restart file
 read_restart    ../DEM/post/restart/liggghts.restart
 
-neighbor        0.05 bin
+neighbor        0.005 bin
 neigh_modify    delay 0
 
 # Material properties required for granular pair styles
@@ -55,16 +55,6 @@ compute     centerOfMass all com
 
 # compute total dragforce
 compute     dragtotal all reduce sum f_dragforce[1] f_dragforce[2] f_dragforce[3]
-
-# 监控数据计算 - 用于平衡控制 [第一步：只恢复compute计算]
-compute 	avg_vel all reduce ave vx vy vz
-variable 	avg_vel_mag equal sqrt(c_avg_vel[1]*c_avg_vel[1]+c_avg_vel[2]*c_avg_vel[2]+c_avg_vel[3]*c_avg_vel[3])
-compute 	max_vel all reduce max vx vy vz  
-variable 	max_vel_mag equal sqrt(c_max_vel[1]*c_max_vel[1]+c_max_vel[2]*c_max_vel[2]+c_max_vel[3]*c_max_vel[3])
-
-# 输出监控数据到专门文件 [第二步：恢复文件输出]
-variable 	time_real equal step*dt
-fix         monitor_output all print 2000 "${time_real} ${avg_vel_mag} ${max_vel_mag}" file ../DEM/monitor/velocity.dat title "#time avg_vel max_vel"
 
 # screen output
 compute         rke all erotate/sphere
